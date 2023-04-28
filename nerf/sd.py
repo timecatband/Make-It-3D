@@ -1,5 +1,5 @@
 from transformers import CLIPTextModel, CLIPTokenizer, logging, CLIPVisionModel, CLIPFeatureExtractor
-from diffusers import AutoencoderKL, UNet2DConditionModel, PNDMScheduler, DDIMScheduler
+from diffusers import AutoencoderKL, UNet2DConditionModel, PNDMScheduler, DDIMScheduler, StableDiffusionPipeline
 
 # suppress partial model loading warning
 logging.set_verbosity_error()
@@ -7,6 +7,7 @@ logging.set_verbosity_error()
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 from torchvision.utils import save_image
 import torchvision.transforms as T
 import time
@@ -36,21 +37,31 @@ class StableDiffusion(nn.Module):
             model_key = "runwayml/stable-diffusion-v1-5"
         else:
             raise ValueError(f'Stable-diffusion version {self.sd_version} not supported.')
+        
+        pipe = StableDiffusionPipeline.from_pretrained(model_key, torch_dtype = torch.float16)
+
+      
+        pipe.enable_sequential_cpu_offload()
+        pipe.enable_vae_slicing()
+        pipe.unet.to(memory_format=torch.channels_last)
+        pipe.enable_attention_slicing(1)
+#        pipe.to("cuda")
+
+        self.vae = pipe.vae
+        self.tokenizer = pipe.tokenizer
+        self.text_encoder = pipe.text_encoder
+        self.unet = pipe.unet
 
         # Create model
-        self.vae = AutoencoderKL.from_pretrained(model_key, subfolder="vae").to(self.device)
-        self.tokenizer = CLIPTokenizer.from_pretrained(model_key, subfolder="tokenizer")
-        self.text_encoder = CLIPTextModel.from_pretrained(model_key, subfolder="text_encoder").to(self.device)
-        self.image_encoder = CLIPVisionModel.from_pretrained("openai/clip-vit-large-patch14").to(self.device)
-        self.text_clip_encoder = CLIPVisionModel.from_pretrained("openai/clip-vit-large-patch14").to(self.device)
-        
-        self.processor = CLIPFeatureExtractor.from_pretrained("openai/clip-vit-large-patch14")
+        self.image_encoder = CLIPVisionModel.from_pretrained("openai/clip-vit-base-patch32", torch_dtype=torch.float16).to(self.device)
+    #    self.text_clip_encoder = CLIPVisionModel.from_pretrained("openai/clip-vit-large-patch14").to(self.device)
+        self.text_clip_encoder = self.image_encoder
+        self.processor = self.text_clip_encoder 
         
         self.aug = T.Compose([
             T.Resize((224, 224)),
             T.Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)),
         ])
-        self.unet = UNet2DConditionModel.from_pretrained(model_key, subfolder="unet").to(self.device)
         
         self.scheduler = DDIMScheduler.from_pretrained(model_key, subfolder="scheduler")
         # self.scheduler = PNDMScheduler.from_pretrained(model_key, subfolder="scheduler")

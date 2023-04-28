@@ -144,6 +144,7 @@ if __name__ == '__main__':
     if opt.guidance == 'stable-diffusion':
         from nerf.sd import StableDiffusion
         guidance = StableDiffusion(device, opt.sd_version, opt.hf_key, step_range=opt.step_range)
+                                   
     elif opt.guidance == 'clip':
         from nerf.clip import CLIP
         guidance = CLIP(device)
@@ -200,12 +201,12 @@ if __name__ == '__main__':
             mode="bicubic",
             align_corners=True,
         ) # [1, 1, 512, 512] [80~150]
-        DPT.util.io.write_depth_name(os.path.join(opt.workspace, opt.text.replace(" ", "_") + '_depth'), depth_prediction.squeeze().cpu().numpy(), bits=2)
+        DPT.util.io.write_depth(os.path.join(opt.workspace, opt.text.replace(" ", "_") + '_depth'), depth_prediction.squeeze().cpu().numpy(), bits=2)
         disparity = imageio.imread(os.path.join(opt.workspace, opt.text.replace(" ", "_") + '_depth.png')) / 65535.
         disparity = median_filter(disparity, size=5)
         depth = 1. / np.maximum(disparity, 1e-2)
         
-        depth = DPT.util.io.resize_img_cv(depth, ds_factor=1)
+#        depth = DPT.util.io.resize_image(depth)#, ds_factor=1)
     
     depth_prediction = torch.tensor(depth, device=device)
     depth_mask = torch.tensor(depth_mask, device=device)
